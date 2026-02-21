@@ -24,6 +24,7 @@ class GenerateRequest(BaseModel):
     sender_context: str = ""
     system_prompt: Optional[str] = None
     tone: Literal["direct", "friendly", "formal", "bold"] = "direct"
+    channel: Literal["email", "linkedin", "social_dm"] = "email"
 
 
 class LeadPromptPreview(BaseModel):
@@ -146,6 +147,7 @@ async def generate_emails_for_session(
                 original_query=session.raw_query,
                 custom_system_prompt=body.system_prompt,
                 tone=body.tone,
+                channel=body.channel,
             )
 
             if "error" not in email_result:

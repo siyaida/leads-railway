@@ -6,6 +6,7 @@ class PipelineRunRequest(BaseModel):
     query: str
     sender_context: Optional[str] = ""
     tone: Literal["direct", "friendly", "formal", "bold"] = "direct"
+    channel: Literal["email", "linkedin", "social_dm"] = "email"
 
 
 class LogEntry(BaseModel):

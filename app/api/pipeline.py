@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
 
 
 async def _run_pipeline_background(
-    session_id: str, query: str, sender_context: str, tone: str = "direct"
+    session_id: str, query: str, sender_context: str, tone: str = "direct", channel: str = "email"
 ) -> None:
     """Wrapper that creates its own DB session for the background task."""
     db = SessionLocal()
@@ -27,6 +27,7 @@ async def _run_pipeline_background(
             db=db,
             settings=settings,
             tone=tone,
+            channel=channel,
         )
     finally:
         db.close()
@@ -92,6 +93,7 @@ async def run_pipeline(
         payload.query.strip(),
         payload.sender_context or "",
         payload.tone,
+        payload.channel,
     )
 
     return SessionResponse.model_validate(session)

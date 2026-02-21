@@ -33,6 +33,7 @@ async def run_pipeline(
     db: Session,
     settings: Settings,
     tone: str = "direct",
+    channel: str = "email",
 ) -> None:
     """Orchestrate the full lead generation pipeline.
 
@@ -257,9 +258,10 @@ async def run_pipeline(
             .all()
         )
 
+        channel_label = {"email": "emails", "linkedin": "LinkedIn messages", "social_dm": "social DMs"}.get(channel, "messages")
         log.add_log(
             session_id, "generate",
-            f"Generating personalized emails for {len(leads)} leads...",
+            f"Generating personalized {channel_label} for {len(leads)} leads...",
             emoji="✉️",
         )
 
@@ -282,7 +284,7 @@ async def run_pipeline(
                     "scraped_context": lead.scraped_context,
                 }
                 email_result = await llm_service.generate_email(
-                    lead_data, sender_context, query, tone=tone
+                    lead_data, sender_context, query, tone=tone, channel=channel
                 )
                 if "error" not in email_result:
                     lead.personalized_email = email_result.get("body", "")

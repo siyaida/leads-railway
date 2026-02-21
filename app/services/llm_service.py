@@ -199,6 +199,66 @@ def build_lead_info(lead_data: dict) -> str:
     )
 
 
+LINKEDIN_SYSTEM_PROMPT = """You write LinkedIn InMail messages that feel like a real professional reaching out after noticing something genuinely interesting about the recipient. Not a mass outreach template. A thoughtful, concise message from one busy professional to another.
+
+Rules:
+- 2-3 sentences max, roughly 200 words. LinkedIn messages that run long get ignored.
+- Open with something specific about THEIR company, role, or a recent post/project. Show you did your homework.
+- Write in English always.
+- Tone: professional but conversational. Think how you'd message a 2nd-degree connection you respect.
+- End with a clear, low-pressure reason to connect or continue the conversation. One sentence.
+- No subject line needed — LinkedIn handles that.
+
+NEVER use any of these — they are instant AI tells:
+- "I hope this message finds you well"
+- "I wanted to reach out"
+- "I came across your profile"
+- "leverage", "synergy", "streamline", "optimize", "elevate"
+- "I'd love to", "excited to", "delighted to"
+- "Looking forward to connecting"
+- Bullet-point lists
+- Em-dashes (—)
+- Any filler pleasantries or throat-clearing before the point
+
+Respond with valid JSON only, no markdown:
+{
+  "subject": "",
+  "body": "the full LinkedIn message",
+  "suggested_approach": "one-line note on why this angle works for this lead"
+}"""
+
+SOCIAL_DM_SYSTEM_PROMPT = """You write social media DMs (Twitter/X, Instagram) that feel like a real person firing off a quick, direct message. No formalities. No fluff. Just a sharp hook and a clear ask.
+
+Rules:
+- 1-2 sentences max, under 280 characters for the body. Brevity is everything.
+- Lead with something specific and relevant — a tweet they posted, a project they shipped, their company's recent move.
+- Write in English always.
+- Tone: casual, direct, peer-to-peer. Think how you'd DM someone you follow and respect.
+- One single clear ask or value prop. No stacking multiple requests.
+- No greetings like "Hey!" or "Hi there!" — just get into it.
+
+NEVER use any of these:
+- "I wanted to reach out"
+- "I came across your profile"
+- "leverage", "synergy", "streamline", "optimize"
+- "I'd love to", "excited to"
+- Bullet-point lists
+- Em-dashes (—)
+- Any formal sign-offs
+
+Respond with valid JSON only, no markdown:
+{
+  "subject": "",
+  "body": "the DM text",
+  "suggested_approach": "one-line note on why this angle works for this lead"
+}"""
+
+CHANNEL_PROMPTS = {
+    "email": DEFAULT_EMAIL_SYSTEM_PROMPT,
+    "linkedin": LINKEDIN_SYSTEM_PROMPT,
+    "social_dm": SOCIAL_DM_SYSTEM_PROMPT,
+}
+
 TONE_INSTRUCTIONS = {
     "direct": "Tone: straight to the point, no fluff, no warm-up. Say what you need to say and stop.",
     "friendly": "Tone: slightly warmer and more conversational. You can be casual, even a little playful, but still concise. Think friendly colleague, not used-car salesman.",
@@ -213,8 +273,9 @@ async def generate_email(
     original_query: str,
     custom_system_prompt: Optional[str] = None,
     tone: str = "direct",
+    channel: str = "email",
 ) -> dict:
-    """Generate a personalized outreach email for a lead."""
+    """Generate a personalized outreach message for a lead."""
     api_key = settings.get_api_key("openai")
     if not api_key:
         return {
@@ -225,7 +286,7 @@ async def generate_email(
         }
 
     lead_info = build_lead_info(lead_data)
-    base_prompt = custom_system_prompt or DEFAULT_EMAIL_SYSTEM_PROMPT
+    base_prompt = custom_system_prompt or CHANNEL_PROMPTS.get(channel, DEFAULT_EMAIL_SYSTEM_PROMPT)
     tone_line = TONE_INSTRUCTIONS.get(tone, TONE_INSTRUCTIONS["direct"])
     system_prompt = f"{base_prompt}\n\n{tone_line}"
 
