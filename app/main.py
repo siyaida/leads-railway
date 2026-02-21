@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import engine, Base
+from app.models.app_setting import AppSetting  # noqa: F401 — registers table for create_all
 from app.api.auth import router as auth_router
 from app.api.pipeline import router as pipeline_router
 from app.api.leads import router as leads_router

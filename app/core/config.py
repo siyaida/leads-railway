@@ -1,31 +1,53 @@
-import json
-import os
+import logging
 import secrets
-from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import Optional
 
+logger = logging.getLogger(__name__)
 
-API_KEYS_FILE = Path(__file__).resolve().parent.parent.parent / "api_keys.json"
+KEY_MAP = {
+    "serper": "SERPER_API_KEY",
+    "apollo": "APOLLO_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
 
 
-def _load_api_keys() -> dict:
-    """Load API keys from the persistent JSON file."""
-    if API_KEYS_FILE.exists():
+def _get_db_setting(key: str) -> Optional[str]:
+    """Read a single setting from the app_settings table."""
+    try:
+        from app.core.database import SessionLocal
+        from app.models.app_setting import AppSetting
+
+        db = SessionLocal()
         try:
-            with open(API_KEYS_FILE, "r") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            return {}
-    return {}
+            row = db.query(AppSetting).filter(AppSetting.key == key).first()
+            return row.value if row else None
+        finally:
+            db.close()
+    except Exception as e:
+        # Table may not exist yet during first startup
+        logger.debug(f"Could not read DB setting {key}: {e}")
+        return None
 
 
-def _save_api_keys(keys: dict) -> None:
-    """Save API keys to the persistent JSON file."""
-    existing = _load_api_keys()
-    existing.update(keys)
-    with open(API_KEYS_FILE, "w") as f:
-        json.dump(existing, f, indent=2)
+def _set_db_setting(key: str, value: str) -> None:
+    """Write a single setting to the app_settings table (upsert)."""
+    try:
+        from app.core.database import SessionLocal
+        from app.models.app_setting import AppSetting
+
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter(AppSetting.key == key).first()
+            if row:
+                row.value = value
+            else:
+                db.add(AppSetting(key=key, value=value))
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Could not save DB setting {key}: {e}")
 
 
 class Settings(BaseSettings):
@@ -45,41 +67,31 @@ class Settings(BaseSettings):
     }
 
     def get_api_key(self, service: str) -> str:
-        """Get API key: first check api_keys.json, then fall back to env/settings."""
-        stored = _load_api_keys()
-        key_map = {
-            "serper": "SERPER_API_KEY",
-            "apollo": "APOLLO_API_KEY",
-            "openai": "OPENAI_API_KEY",
-        }
-        env_attr = key_map.get(service, "")
-        stored_val = stored.get(env_attr, "")
-        if stored_val:
-            return stored_val
+        """Get API key: first check database, then fall back to env/settings."""
+        env_attr = KEY_MAP.get(service, "")
+        if not env_attr:
+            return ""
+        db_val = _get_db_setting(env_attr)
+        if db_val:
+            return db_val
         return getattr(self, env_attr, "")
 
     def set_api_key(self, service: str, value: str) -> None:
-        """Persist an API key to api_keys.json."""
-        key_map = {
-            "serper": "SERPER_API_KEY",
-            "apollo": "APOLLO_API_KEY",
-            "openai": "OPENAI_API_KEY",
-        }
-        env_attr = key_map.get(service)
+        """Persist an API key to the database."""
+        env_attr = KEY_MAP.get(service)
         if env_attr:
-            _save_api_keys({env_attr: value.strip()})
+            _set_db_setting(env_attr, value.strip())
 
     def get_model(self) -> str:
-        """Get the configured OpenAI model: check api_keys.json first, then fall back to env/settings."""
-        stored = _load_api_keys()
-        stored_model = stored.get("OPENAI_MODEL", "")
-        if stored_model:
-            return stored_model
+        """Get the configured OpenAI model: check database first, then fall back to env/settings."""
+        db_val = _get_db_setting("OPENAI_MODEL")
+        if db_val:
+            return db_val
         return self.OPENAI_MODEL
 
     def set_model(self, model: str) -> None:
-        """Persist the OpenAI model choice to api_keys.json."""
-        _save_api_keys({"OPENAI_MODEL": model.strip()})
+        """Persist the OpenAI model choice to the database."""
+        _set_db_setting("OPENAI_MODEL", model.strip())
 
     def get_all_api_keys_masked(self) -> dict:
         """Return masked versions of all API keys for the settings UI."""
