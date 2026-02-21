@@ -13,7 +13,7 @@ SERPER_URL = "https://google.serper.dev/search"
 
 
 async def _search_single(
-    query: str, api_key: str, num_results: int = 10
+    query: str, api_key: str, num_results: int = 10, location: Optional[str] = None,
 ) -> list[dict]:
     """Execute a single search query against the Serper API."""
     headers = {
@@ -24,6 +24,8 @@ async def _search_single(
         "q": query,
         "num": num_results,
     }
+    if location:
+        payload["location"] = location
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         response = await client.post(SERPER_URL, json=payload, headers=headers)
@@ -55,7 +57,8 @@ async def _search_single(
 
 
 async def search(
-    queries: list[str], num_results: int = 10, api_key_override: Optional[str] = None
+    queries: list[str], num_results: int = 10, api_key_override: Optional[str] = None,
+    location: Optional[str] = None,
 ) -> list[dict]:
     """Execute multiple search queries concurrently and deduplicate by URL."""
     api_key = api_key_override or settings.get_api_key("serper")
@@ -66,7 +69,7 @@ async def search(
             }
         ]
 
-    tasks = [_search_single(query, api_key, num_results) for query in queries]
+    tasks = [_search_single(query, api_key, num_results, location=location) for query in queries]
 
     all_results = []
     try:

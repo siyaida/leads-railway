@@ -24,6 +24,7 @@ async def search_people(
     domain: str,
     title_keywords: Optional[list[str]] = None,
     seniority: Optional[list[str]] = None,
+    locations: Optional[list[str]] = None,
     api_key_override: Optional[str] = None,
 ) -> list[dict]:
     """Search for people at a company, then enrich each to get full contact data.
@@ -46,6 +47,8 @@ async def search_people(
         payload["person_titles"] = title_keywords
     if seniority:
         payload["person_seniorities"] = seniority
+    if locations:
+        payload["person_locations"] = locations
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:

@@ -81,7 +81,9 @@ async def run_pipeline(
         for i, sq in enumerate(search_queries):
             log.add_log(session_id, "search", f"Searching: \"{sq}\"", emoji="🌐")
 
-        search_results = await serper_service.search(search_queries)
+        # Use first location for Serper geo-targeting
+        serper_location = locations[0] if locations else None
+        search_results = await serper_service.search(search_queries, location=serper_location)
 
         valid_results = [r for r in search_results if "error" not in r]
         if not valid_results:
@@ -166,6 +168,7 @@ async def run_pipeline(
                     domain=domain,
                     title_keywords=title_keywords if title_keywords else None,
                     seniority=seniority if seniority else None,
+                    locations=locations if locations else None,
                 )
                 valid_people = [p for p in people if "error" not in p]
 
