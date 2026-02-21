@@ -32,6 +32,7 @@ async def run_pipeline(
     sender_context: str,
     db: Session,
     settings: Settings,
+    tone: str = "direct",
 ) -> None:
     """Orchestrate the full lead generation pipeline.
 
@@ -281,7 +282,7 @@ async def run_pipeline(
                     "scraped_context": lead.scraped_context,
                 }
                 email_result = await llm_service.generate_email(
-                    lead_data, sender_context, query
+                    lead_data, sender_context, query, tone=tone
                 )
                 if "error" not in email_result:
                     lead.personalized_email = email_result.get("body", "")

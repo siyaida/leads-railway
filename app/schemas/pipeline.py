@@ -1,10 +1,11 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel
 
 
 class PipelineRunRequest(BaseModel):
     query: str
     sender_context: Optional[str] = ""
+    tone: Literal["direct", "friendly", "formal", "bold"] = "direct"
 
 
 class LogEntry(BaseModel):

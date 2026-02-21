@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -23,6 +23,7 @@ router = APIRouter(prefix="/api/generate", tags=["generate"])
 class GenerateRequest(BaseModel):
     sender_context: str = ""
     system_prompt: Optional[str] = None
+    tone: Literal["direct", "friendly", "formal", "bold"] = "direct"
 
 
 class LeadPromptPreview(BaseModel):
@@ -144,6 +145,7 @@ async def generate_emails_for_session(
                 sender_context=body.sender_context or "",
                 original_query=session.raw_query,
                 custom_system_prompt=body.system_prompt,
+                tone=body.tone,
             )
 
             if "error" not in email_result:

@@ -12,18 +12,36 @@ OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 
 # ── Default prompts (exposed so the UI can show / override them) ──────────
 
-DEFAULT_EMAIL_SYSTEM_PROMPT = """You are an expert B2B sales email writer. Write personalized, compelling outreach emails
-that feel genuine and not spammy. Focus on value proposition and relevance to the recipient's role.
+DEFAULT_EMAIL_SYSTEM_PROMPT = """You write cold outreach emails that sound like a real person typed them in 90 seconds between meetings. Not a copywriter. Not a bot. A busy professional who spotted something interesting about the recipient's company and fired off a quick note.
 
-Respond with valid JSON only:
+Rules:
+- 4-6 sentences total. That's it. No multi-paragraph essays.
+- Open with something specific about THEIR company or role — a recent project, a detail from their website, their industry context. Never a generic intro.
+- Vary your sentence length. Mix short punchy lines with one longer sentence. Real people don't write in uniform cadence.
+- Write in English always.
+- Tone: direct, confident, peer-to-peer. You're not pitching from below — you're one professional offering something relevant to another.
+- End with a low-friction ask (quick call, short reply, etc). One sentence. No groveling.
+
+NEVER use any of these — they are instant AI tells:
+- "I hope this message finds you well"
+- "I wanted to reach out"
+- "I came across your profile"
+- "leverage", "synergy", "streamline", "optimize", "elevate"
+- "I'd love to", "excited to", "delighted to"
+- "Looking forward to hearing from you"
+- "Best regards", "Warm regards", "Kind regards"
+- Bullet-point lists in the email body
+- Em-dashes (—)
+- Any filler pleasantries or throat-clearing before the point
+
+Subject lines: short (3-7 words), lowercase-friendly, specific to the recipient. No clickbait. No "Quick question" or "Reaching out".
+
+Respond with valid JSON only, no markdown:
 {
-  "subject": "Email subject line",
-  "body": "Full email body text",
-  "suggested_approach": "Brief strategy note about why this approach works for this lead"
-}
-
-Keep emails concise (3-4 paragraphs max). Use the lead's name and company details naturally.
-Do not use markdown formatting in the JSON values."""
+  "subject": "the subject line",
+  "body": "the full email body",
+  "suggested_approach": "one-line note on why this angle works for this lead"
+}"""
 
 LEAD_INFO_TEMPLATE = """Lead Information:
 - Name: {first_name} {last_name}
@@ -86,7 +104,15 @@ extract the following structured information as JSON:
   "keywords": ["additional relevant keywords"]
 }
 
-Generate 2-4 diverse Google search queries that would help find companies and decision-makers matching the request.
+Search query rules:
+- Generate 3-5 diverse Google search queries.
+- EVERY search query MUST include the target location/city/region name directly in the query string. Do not generate location-less queries.
+  Good: "digital marketing agencies in Jeddah", "top software companies Riyadh Saudi Arabia"
+  Bad: "digital marketing agencies", "top software companies"
+- Mix query styles: "[industry] companies in [city]", "[service] agencies [city] [country]", "top [niche] firms in [region]", "best [service] providers [city]"
+- Include local business directory patterns when relevant: "[industry] [city] directory", "list of [business type] in [location]"
+- If no location is mentioned in the user query, still generate queries but note an empty locations array.
+
 Always respond with valid JSON only, no markdown formatting."""
 
     messages = [
@@ -173,11 +199,20 @@ def build_lead_info(lead_data: dict) -> str:
     )
 
 
+TONE_INSTRUCTIONS = {
+    "direct": "Tone: straight to the point, no fluff, no warm-up. Say what you need to say and stop.",
+    "friendly": "Tone: slightly warmer and more conversational. You can be casual, even a little playful, but still concise. Think friendly colleague, not used-car salesman.",
+    "formal": "Tone: polished and professional but still human. Suitable for C-suite executives. No slang, but also no stiffness. Think senior partner at a consulting firm.",
+    "bold": "Tone: open with a provocative or unexpected statement that breaks the pattern. Be contrarian, challenge an assumption, or lead with a surprising stat. Pattern-interrupt style.",
+}
+
+
 async def generate_email(
     lead_data: dict,
     sender_context: str,
     original_query: str,
     custom_system_prompt: Optional[str] = None,
+    tone: str = "direct",
 ) -> dict:
     """Generate a personalized outreach email for a lead."""
     api_key = settings.get_api_key("openai")
@@ -190,15 +225,20 @@ async def generate_email(
         }
 
     lead_info = build_lead_info(lead_data)
-    system_prompt = custom_system_prompt or DEFAULT_EMAIL_SYSTEM_PROMPT
+    base_prompt = custom_system_prompt or DEFAULT_EMAIL_SYSTEM_PROMPT
+    tone_line = TONE_INSTRUCTIONS.get(tone, TONE_INSTRUCTIONS["direct"])
+    system_prompt = f"{base_prompt}\n\n{tone_line}"
 
-    user_prompt = f"""Original search intent: {original_query}
+    user_prompt = f"""WHO I AM (the sender):
+{sender_context or 'Not provided — keep the pitch generic but still human.'}
 
-Sender context: {sender_context or 'Not provided'}
+WHY I'M LOOKING:
+{original_query}
 
+THE LEAD:
 {lead_info}
 
-Write a personalized outreach email for this lead."""
+Write a cold email to this person. Ground your opening in a specific detail from their company website context — mention something concrete they do, built, or announced. Do not repeat their job title back at them as the opener. Make the connection between what I offer and what they need feel natural, not forced."""
 
     messages = [
         {"role": "system", "content": system_prompt},
