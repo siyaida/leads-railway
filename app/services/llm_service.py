@@ -43,6 +43,51 @@ Respond with valid JSON only, no markdown:
   "suggested_approach": "one-line note on why this angle works for this lead"
 }"""
 
+
+def build_lead_info(lead_data: dict) -> str:
+    """Build the lead context string from lead data dict, omitting empty/unknown fields."""
+    parts = []
+
+    first = (lead_data.get("first_name") or "").strip()
+    last = (lead_data.get("last_name") or "").strip()
+    name = f"{first} {last}".strip()
+    if name:
+        parts.append(f"- Name: {name}")
+
+    title = (lead_data.get("job_title") or "").strip()
+    if title:
+        parts.append(f"- Title: {title}")
+
+    company = (lead_data.get("company_name") or "").strip()
+    if company:
+        parts.append(f"- Company: {company}")
+
+    industry = (lead_data.get("company_industry") or "").strip()
+    if industry:
+        parts.append(f"- Industry: {industry}")
+
+    city = (lead_data.get("city") or "").strip()
+    state = (lead_data.get("state") or "").strip()
+    country = (lead_data.get("country") or "").strip()
+    location_parts = [p for p in [city, state, country] if p]
+    if location_parts:
+        parts.append(f"- Location: {', '.join(location_parts)}")
+
+    linkedin = (lead_data.get("linkedin_url") or "").strip()
+    if linkedin:
+        parts.append(f"- LinkedIn: {linkedin}")
+
+    context = (lead_data.get("scraped_context") or "").strip()
+    if context:
+        parts.append(f"- Company Website Context: {context[:1000]}")
+
+    if not parts:
+        return "Lead Information:\n- No detailed information available."
+
+    return "Lead Information:\n" + "\n".join(parts)
+
+
+# Keep template reference for backward compat with generate.py imports
 LEAD_INFO_TEMPLATE = """Lead Information:
 - Name: {first_name} {last_name}
 - Title: {job_title}
@@ -89,29 +134,64 @@ async def parse_query(raw_query: str) -> dict:
             "company_size": [],
             "seniority_levels": [],
             "keywords": [],
+            "company_keywords": [],
+            "negative_keywords": [],
         }
 
-    system_prompt = """You are a lead generation query parser. Given a natural language query about finding business leads,
-extract the following structured information as JSON:
+    system_prompt = """You are an expert B2B lead generation query parser. Given a natural language query about finding business leads, extract structured information AND generate high-quality Google search queries that will find ACTUAL COMPANIES (not job boards, news articles, or generic directories).
+
+Return this exact JSON structure:
 
 {
-  "search_queries": ["list of Google search queries to find relevant companies/people"],
+  "search_queries": ["list of 5-8 diverse Google search queries"],
   "job_titles": ["list of target job titles"],
   "industries": ["list of target industries"],
   "locations": ["list of target geographic locations"],
   "company_size": ["list of company size ranges, e.g. '11-50', '51-200'"],
   "seniority_levels": ["list like 'senior', 'manager', 'director', 'vp', 'c_suite'"],
-  "keywords": ["additional relevant keywords"]
+  "keywords": ["additional relevant keywords"],
+  "company_keywords": ["what these companies do/sell/provide"],
+  "negative_keywords": ["terms to exclude like job boards, career pages"]
 }
 
-Search query rules:
-- Generate 3-5 diverse Google search queries.
-- EVERY search query MUST include the target location/city/region name directly in the query string. Do not generate location-less queries.
-  Good: "digital marketing agencies in Jeddah", "top software companies Riyadh Saudi Arabia"
-  Bad: "digital marketing agencies", "top software companies"
-- Mix query styles: "[industry] companies in [city]", "[service] agencies [city] [country]", "top [niche] firms in [region]", "best [service] providers [city]"
-- Include local business directory patterns when relevant: "[industry] [city] directory", "list of [business type] in [location]"
-- If no location is mentioned in the user query, still generate queries but note an empty locations array.
+SEARCH QUERY GENERATION RULES — THIS IS CRITICAL:
+
+1. Generate 5-8 diverse queries. Each must include the target location/city/region.
+
+2. Use these PROVEN query patterns (mix at least 4 different types):
+
+   a) Company list queries:
+      "[industry] companies in [city] list"
+      "top [service] companies [city] [country]"
+
+   b) Business directory queries:
+      "[industry] [city] directory"
+      "[service] providers [city] site:clutch.co OR site:g2.com"
+      "[industry] companies [city] site:crunchbase.com"
+
+   c) LinkedIn company queries:
+      "[job title] [industry] [city] site:linkedin.com/in"
+      "[industry] company [city] site:linkedin.com/company"
+
+   d) Industry association/member queries:
+      "[industry] association members [city]"
+      "[industry] chamber of commerce [city]"
+
+   e) News/PR queries (for finding active companies):
+      "[industry] [city] startup OR funding OR launch 2024 2025 2026"
+      "[industry] companies [region] expansion OR partnership"
+
+   f) Map/local queries:
+      "[service] companies near [city]"
+      "[industry] firms [city] [country] reviews"
+
+3. NEVER generate generic queries without location.
+   GOOD: "AI companies in Riyadh Saudi Arabia list"
+   BAD: "AI companies" or "artificial intelligence firms"
+
+4. Include negative_keywords to filter junk: ["jobs", "career", "hiring", "salary", "glassdoor", "indeed", "job board", "wikipedia"]
+
+5. company_keywords should capture WHAT these companies do (e.g., for "AI startups" → ["artificial intelligence", "machine learning", "AI solutions", "AI platform"])
 
 Always respond with valid JSON only, no markdown formatting."""
 
@@ -121,7 +201,7 @@ Always respond with valid JSON only, no markdown formatting."""
     ]
 
     try:
-        result = await _call_openai(messages, api_key, temperature=0.3)
+        result = await _call_openai(messages, api_key, temperature=0.4)
         content = result["choices"][0]["message"]["content"]
         # Strip markdown code fences if present
         content = content.strip()
@@ -140,6 +220,8 @@ Always respond with valid JSON only, no markdown formatting."""
             "company_size": [],
             "seniority_levels": [],
             "keywords": [],
+            "company_keywords": [],
+            "negative_keywords": [],
         }
         for key, default_val in defaults.items():
             if key not in parsed:
@@ -156,6 +238,8 @@ Always respond with valid JSON only, no markdown formatting."""
             "company_size": [],
             "seniority_levels": [],
             "keywords": [],
+            "company_keywords": [],
+            "negative_keywords": [],
         }
     except (json.JSONDecodeError, KeyError, IndexError) as e:
         logger.error(f"Failed to parse OpenAI response: {e}")
@@ -168,6 +252,8 @@ Always respond with valid JSON only, no markdown formatting."""
             "company_size": [],
             "seniority_levels": [],
             "keywords": [],
+            "company_keywords": [],
+            "negative_keywords": [],
         }
     except Exception as e:
         logger.error(f"Unexpected error in parse_query: {e}")
@@ -180,23 +266,9 @@ Always respond with valid JSON only, no markdown formatting."""
             "company_size": [],
             "seniority_levels": [],
             "keywords": [],
+            "company_keywords": [],
+            "negative_keywords": [],
         }
-
-
-def build_lead_info(lead_data: dict) -> str:
-    """Build the lead context string from lead data dict."""
-    return LEAD_INFO_TEMPLATE.format(
-        first_name=lead_data.get("first_name", "") or "",
-        last_name=lead_data.get("last_name", "") or "",
-        job_title=lead_data.get("job_title", "Unknown") or "Unknown",
-        company_name=lead_data.get("company_name", "Unknown") or "Unknown",
-        company_industry=lead_data.get("company_industry", "Unknown") or "Unknown",
-        city=lead_data.get("city", "") or "",
-        state=lead_data.get("state", "") or "",
-        country=lead_data.get("country", "") or "",
-        linkedin_url=lead_data.get("linkedin_url", "N/A") or "N/A",
-        scraped_context=(lead_data.get("scraped_context", "N/A") or "N/A")[:1000],
-    )
 
 
 LINKEDIN_SYSTEM_PROMPT = """You write LinkedIn InMail messages that feel like a real professional reaching out after noticing something genuinely interesting about the recipient. Not a mass outreach template. A thoughtful, concise message from one busy professional to another.
@@ -290,6 +362,13 @@ async def generate_email(
     tone_line = TONE_INSTRUCTIONS.get(tone, TONE_INSTRUCTIONS["direct"])
     system_prompt = f"{base_prompt}\n\n{tone_line}"
 
+    # Determine if we have website context
+    has_context = bool((lead_data.get("scraped_context") or "").strip())
+    if has_context:
+        context_instruction = "Ground your opening in a specific detail from their company website context — mention something concrete they do, built, or announced."
+    else:
+        context_instruction = "Since no website context is available, use the industry and location to craft a relevant angle. Reference a trend or challenge common in their industry/region."
+
     user_prompt = f"""WHO I AM (the sender):
 {sender_context or 'Not provided — keep the pitch generic but still human.'}
 
@@ -299,7 +378,7 @@ WHY I'M LOOKING:
 THE LEAD:
 {lead_info}
 
-Write a cold email to this person. Ground your opening in a specific detail from their company website context — mention something concrete they do, built, or announced. Do not repeat their job title back at them as the opener. Make the connection between what I offer and what they need feel natural, not forced."""
+Write a personalized outreach message to this person. {context_instruction} Do not repeat their job title back at them as the opener. Make the connection between what I offer and what they need feel natural, not forced. If you don't have specific information about the lead, never reference information you don't have — instead focus on the industry/market angle."""
 
     messages = [
         {"role": "system", "content": system_prompt},

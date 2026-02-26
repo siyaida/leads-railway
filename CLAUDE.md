@@ -51,7 +51,7 @@ There are no tests, linters, or type-checking configured in this project.
 The pipeline runs as a **FastAPI BackgroundTask** and progresses through these stages (tracked via `SearchSession.status`):
 
 1. **searching** — `llm_service.parse_query()` parses the natural language query into structured fields, then `serper_service.search()` runs concurrent Google searches
-2. **enriching** — `scraper_service.scrape_many()` scrapes discovered URLs (capped at 15, semaphore-limited to 5 concurrent), then `apollo_service.search_people()` enriches contacts per domain (search + per-person enrich calls)
+2. **enriching** — `scraper_service.scrape_many()` scrapes discovered URLs (capped at 25, semaphore-limited to 5 concurrent), then `apollo_service.search_people()` enriches contacts per domain (search + per-person enrich calls, with quality filtering)
 3. **generating** — `llm_service.generate_email()` creates personalized emails for each lead
 4. **completed** / **failed** — terminal states
 
@@ -72,7 +72,16 @@ SQLAlchemy with synchronous sessions. Tables auto-created on startup via `Base.m
 
 ### Frontend
 
-Pre-built React SPA in `static/`. Served by FastAPI's `StaticFiles` mount for `/assets` and a catch-all route for SPA routing. The frontend source is not in this repo — only the built output.
+React (Vite) SPA. Source in `frontend/`, built output in `static/`.
+
+```bash
+cd frontend && npm install && npm run build   # outputs to ../static/
+cd frontend && npm run dev                     # dev server on :5173, proxies /api to :8000
+```
+
+**Structure**: `frontend/src/` — `App.jsx` (router), `pages/` (Login, Register, Dashboard, Session, Settings), `components/` (PipelineForm, ChannelPicker, TonePicker, ProgressPanel, EmailPreview, Navbar), `context/AuthContext.jsx`, `api/client.js` (axios + JWT interceptor).
+
+Served by FastAPI's `StaticFiles` mount for `/assets` and a catch-all route for SPA routing.
 
 ### External APIs
 

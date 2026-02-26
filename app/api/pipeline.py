@@ -86,6 +86,10 @@ async def run_pipeline(
     db.commit()
     db.refresh(session)
 
+    # Set initial progress immediately so frontend never sees 0%
+    pipeline_log.set_progress(session.id, "starting", 1)
+    pipeline_log.add_log(session.id, "starting", "Pipeline queued, starting shortly...", emoji="⏳")
+
     # Launch pipeline in background
     background_tasks.add_task(
         _run_pipeline_background,
