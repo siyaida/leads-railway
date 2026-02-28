@@ -72,6 +72,12 @@ async def run_pipeline(
 
         parsed = await llm_service.parse_query(query)
 
+        # Check for parse errors — fall back to raw query
+        if parsed.get("error"):
+            logger.warning(f"[{session_id}] Query parse error: {parsed['error']}")
+            log.add_log(session_id, "query", f"Query parsing had issues, using raw query as fallback", emoji="⚠️")
+            parsed = {"search_queries": [query], "job_titles": [], "locations": []}
+
         # Store parsed query in session
         session = db.query(SearchSession).filter(SearchSession.id == session_id).first()
         if session:
@@ -108,9 +114,16 @@ async def run_pipeline(
         search_results = await serper_service.search(search_queries, location=serper_location)
 
         valid_results = [r for r in search_results if "error" not in r]
+        error_results = [r for r in search_results if "error" in r]
+        if error_results:
+            for er in error_results:
+                logger.warning(f"[{session_id}] Serper query failed: {er.get('error', 'unknown')}")
+            log.add_log(session_id, "search", f"{len(error_results)} search queries failed", emoji="⚠️")
+
         if not valid_results:
-            log.add_log(session_id, "search", "No search results found", emoji="❌")
+            log.add_log(session_id, "search", "No search results found. Try a different query.", emoji="❌")
             _update_session_status(db, session_id, "failed")
+            log.set_progress(session_id, "error", 100)
             return
 
         log.add_log(
@@ -139,11 +152,11 @@ async def run_pipeline(
         _update_session_status(db, session_id, "enriching", result_count=len(db_results))
 
         # ── Step 3: Scrape URLs for context ──────────────────────────
-        log.set_progress(session_id, "enrich", 35)
+        log.set_progress(session_id, "scrape", 35)
         urls_to_scrape = [r.url for r in db_results if r.url][:25]
 
         log.add_log(
-            session_id, "enrich",
+            session_id, "scrape",
             f"Scraping {len(urls_to_scrape)} websites for context...",
             emoji="📄",
         )
@@ -152,7 +165,7 @@ async def run_pipeline(
 
         scraped_map = {}
         scraped_count = 0
-        for sd in scraped_data:
+        for idx, sd in enumerate(scraped_data):
             url = sd.get("url", "")
             if url and not sd.get("error"):
                 context_parts = []
@@ -167,9 +180,14 @@ async def run_pipeline(
                 scraped_map[url] = " | ".join(context_parts)
                 scraped_count += 1
 
+            # Granular progress during scraping (35% → 45%)
+            if len(urls_to_scrape) > 0 and (idx + 1) % 5 == 0:
+                pct = 35 + ((idx + 1) / len(urls_to_scrape)) * 10
+                log.set_progress(session_id, "scrape", pct)
+
         log.add_log(
-            session_id, "enrich",
-            f"Scraped {scraped_count}/{len(urls_to_scrape)} websites",
+            session_id, "scrape",
+            f"Scraped {scraped_count}/{len(urls_to_scrape)} websites successfully",
             emoji="✅",
         )
         log.set_progress(session_id, "enrich", 45)
@@ -234,10 +252,12 @@ async def run_pipeline(
                 context = scraped_map.get(sr.url, "")
                 # Only create a fallback lead if we have meaningful context
                 if context and sr.domain:
+                    # Use domain as company_name (sr.title is often a page title like "About Us | Company")
+                    domain_name = (sr.domain or "").replace("www.", "").split(".")[0].capitalize() if sr.domain else ""
                     lead = Lead(
                         session_id=session_id,
                         search_result_id=sr.id,
-                        company_name=sr.title or sr.domain or "",
+                        company_name=domain_name or sr.domain or "",
                         company_domain=sr.domain or "",
                         scraped_context=context,
                     )

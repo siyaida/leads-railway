@@ -254,6 +254,7 @@ textarea { resize: vertical; min-height: 60px; }
 .progress-bar-fill.complete { background: var(--green); }
 .progress-bar-fill.error { background: var(--red); }
 .progress-message { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px; }
+.progress-error { font-size: 0.82rem; color: var(--red); margin-bottom: 8px; }
 
 .log-feed {
   max-height: 300px; overflow-y: auto;

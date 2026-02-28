@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Clock, CheckCircle, XCircle, Loader, ArrowRight } from 'lucide-react'
+import { Clock, CheckCircle, XCircle, Loader, ArrowRight, Eye } from 'lucide-react'
 import PipelineForm from '../components/PipelineForm'
 import ProgressPanel from '../components/ProgressPanel'
 import api from '../api/client'
@@ -27,6 +27,7 @@ function StatusBadge({ status }) {
 export default function DashboardPage() {
   const [sessions, setSessions] = useState([])
   const [activeSession, setActiveSession] = useState(null)
+  const [pipelineStatus, setPipelineStatus] = useState(null)
   const [loadingSessions, setLoadingSessions] = useState(true)
   const navigate = useNavigate()
 
@@ -47,12 +48,26 @@ export default function DashboardPage() {
 
   const handleStarted = (session) => {
     setActiveSession(session)
+    setPipelineStatus('pending')
     setSessions((prev) => [session, ...prev])
   }
 
-  const handleComplete = () => {
+  const handleComplete = (finalStatus) => {
+    setPipelineStatus(finalStatus)
     fetchSessions()
   }
+
+  const handleStatusChange = (newStatus) => {
+    setPipelineStatus(newStatus)
+    // Update the session in the sidebar list too
+    if (activeSession) {
+      setSessions((prev) =>
+        prev.map((s) => s.id === activeSession.id ? { ...s, status: newStatus } : s)
+      )
+    }
+  }
+
+  const isFinished = pipelineStatus === 'completed' || pipelineStatus === 'failed'
 
   return (
     <div className="dashboard">
@@ -67,14 +82,25 @@ export default function DashboardPage() {
             <ProgressPanel
               sessionId={activeSession.id}
               onComplete={handleComplete}
+              onStatusChange={handleStatusChange}
             />
-            <div style={{ marginTop: 16, textAlign: 'center' }}>
+            <div style={{ marginTop: 16, textAlign: 'center', display: 'flex', gap: 8, justifyContent: 'center' }}>
               <button
                 className="btn btn-secondary"
                 onClick={() => navigate(`/session/${activeSession.id}`)}
               >
-                View Leads <ArrowRight size={16} />
+                <Eye size={16} />
+                {isFinished ? 'View Leads' : 'View Session'}
+                <ArrowRight size={16} />
               </button>
+              {isFinished && (
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => { setActiveSession(null); setPipelineStatus(null) }}
+                >
+                  Dismiss
+                </button>
+              )}
             </div>
           </div>
         )}
